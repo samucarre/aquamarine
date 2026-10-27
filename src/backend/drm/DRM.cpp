@@ -877,6 +877,15 @@ bool Aquamarine::CDRMBackend::initMgpu() {
 
     rendererState.renderer = CDRMRenderer::attempt(backend.lock(), gpu->renderNodeFd >= 0 ? gpu->renderNodeFd : gpu->fd);
 
+    // A KMS-only secondary (e.g. the HDMI/dcpext card of Apple Silicon, a separate apple-drm device with no render
+    // node) has no EGL device of its own, so the device-platform attempt above always fails and the output can never
+    // be blitted to. Fall back to the GBM platform on its own allocator (Mesa kmsro picks the real GPU). Secondaries
+    // only: the primary keeps its current renderer path.
+    if (!rendererState.renderer && primary && gpu->renderNodeFd < 0) {
+        backend->log(AQ_LOG_WARNING, std::format("drm: initMgpu: no EGL device for {}, trying the GBM platform on its allocator", gpu->path));
+        rendererState.renderer = CDRMRenderer::attempt(backend.lock(), newAllocator);
+    }
+
     if (!rendererState.renderer) {
         backend->log(AQ_LOG_ERROR, "drm: initMgpu: no renderer");
         return false;
